@@ -18,7 +18,11 @@ public class PixelSparkGame : Game
     private readonly PencilTool _pencilTool = new();
     private readonly EraserTool _eraserTool = new();
 
-    private Color _activeColor = Color.White;
+    private readonly ActionHistory _history = new();
+    private PixelAction _currentAction;
+
+    private readonly PaletteManager _palette = new();
+
     private int _zoom = 16;
     private Vector2 _panOffset;
     private bool _showGrid = true;
@@ -35,6 +39,13 @@ public class PixelSparkGame : Game
     private int _zoomIndex = 4; // starts at 16x
 
     private const int PanSpeed = 10;
+
+    // Palette UI layout
+    private const int PaletteLeft = 8;
+    private const int PaletteTop = 30;
+    private const int SwatchSize = 20;
+    private const int SwatchPad = 2;
+    private const int PaletteColumns = 2;
 
     public PixelSparkGame()
     {
@@ -80,6 +91,21 @@ public class PixelSparkGame : Game
 
     private void HandleKeyboard(KeyboardState keyboard)
     {
+        bool ctrl = keyboard.IsKeyDown(Keys.LeftControl) || keyboard.IsKeyDown(Keys.RightControl);
+
+        // Undo / Redo (redo check first — Ctrl+Shift+Z includes Ctrl+Z)
+        bool shift = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
+        if (ctrl && shift && KeyPressed(keyboard, Keys.Z))
+        {
+            _history.Redo(_canvas);
+            return;
+        }
+        if (ctrl && !shift && KeyPressed(keyboard, Keys.Z))
+        {
+            _history.Undo(_canvas);
+            return;
+        }
+
         // Tool switching
         if (KeyPressed(keyboard, Keys.B)) _activeTool = _pencilTool;
         if (KeyPressed(keyboard, Keys.E)) _activeTool = _eraserTool;
@@ -98,6 +124,10 @@ public class PixelSparkGame : Game
         if (keyboard.IsKeyDown(Keys.Right)) _panOffset.X -= PanSpeed;
         if (keyboard.IsKeyDown(Keys.Up)) _panOffset.Y += PanSpeed;
         if (keyboard.IsKeyDown(Keys.Down)) _panOffset.Y -= PanSpeed;
+
+        // Palette switching
+        if (KeyPressed(keyboard, Keys.OemOpenBrackets)) _palette.PrevPalette();
+        if (KeyPressed(keyboard, Keys.OemCloseBrackets)) _palette.NextPalette();
     }
 
     private void AdjustZoom(int direction)
@@ -105,7 +135,6 @@ public class PixelSparkGame : Game
         int newIndex = Math.Clamp(_zoomIndex + direction, 0, ZoomLevels.Length - 1);
         if (newIndex == _zoomIndex) return;
 
-        // Keep canvas visually centered during zoom
         float canvasCenterX = _panOffset.X + _canvas.Width * _zoom / 2f;
         float canvasCenterY = _panOffset.Y + _canvas.Height * _zoom / 2f;
 
@@ -144,8 +173,22 @@ public class PixelSparkGame : Game
             _isPanning = false;
         }
 
+        // Left click on palette swatches
+        if (mouse.LeftButton == ButtonState.Pressed
+            && _prevMouse.LeftButton == ButtonState.Released
+            && !_isPanning)
+        {
+            int swatchIndex = HitTestPalette(mouse.X, mouse.Y);
+            if (swatchIndex >= 0)
+            {
+                _palette.SelectColor(swatchIndex);
+                return; // don't start drawing
+            }
+        }
+
         // Left mouse drawing
         Point gridPos = ScreenToGrid(mouse.X, mouse.Y);
+        Color activeColor = _palette.ActiveColor;
 
         if (mouse.LeftButton == ButtonState.Pressed && !_isPanning)
         {
@@ -154,28 +197,36 @@ public class PixelSparkGame : Game
                 _isDrawing = true;
                 if (_canvas.InBounds(gridPos.X, gridPos.Y))
                 {
-                    _activeTool.OnPress(_canvas, gridPos.X, gridPos.Y, _activeColor);
+                    _currentAction = _activeTool.OnPress(_canvas, gridPos.X, gridPos.Y, activeColor);
                     _lastGridPos = gridPos;
                 }
             }
-            else if (gridPos != _lastGridPos && _lastGridPos.X >= 0)
+            else if (gridPos != _lastGridPos && _lastGridPos.X >= 0 && _currentAction != null)
             {
                 foreach (var p in BresenhamLine(_lastGridPos.X, _lastGridPos.Y, gridPos.X, gridPos.Y))
                 {
                     if (_canvas.InBounds(p.X, p.Y))
-                        _activeTool.OnDrag(_canvas, p.X, p.Y, _activeColor);
+                        _activeTool.OnDrag(_canvas, p.X, p.Y, activeColor, _currentAction);
                 }
                 _lastGridPos = gridPos;
             }
             else if (_lastGridPos.X < 0 && _canvas.InBounds(gridPos.X, gridPos.Y))
             {
-                _activeTool.OnDrag(_canvas, gridPos.X, gridPos.Y, _activeColor);
+                if (_currentAction == null)
+                    _currentAction = _activeTool.OnPress(_canvas, gridPos.X, gridPos.Y, activeColor);
+                else
+                    _activeTool.OnDrag(_canvas, gridPos.X, gridPos.Y, activeColor, _currentAction);
                 _lastGridPos = gridPos;
             }
         }
         else if (_isDrawing)
         {
-            _activeTool.OnRelease(_canvas);
+            _activeTool.OnRelease();
+            if (_currentAction != null)
+            {
+                _history.Push(_currentAction);
+                _currentAction = null;
+            }
             _isDrawing = false;
             _lastGridPos = new Point(-1, -1);
         }
@@ -188,9 +239,10 @@ public class PixelSparkGame : Game
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
 
         _renderer.DrawCanvas(_spriteBatch, _canvas, _zoom, _panOffset, _showGrid);
+        DrawPalette();
 
         // Top bar
-        string topBar = $"[{_activeTool.Name}]  Zoom: {_zoom}x  Grid: {(_showGrid ? "ON" : "OFF")}";
+        string topBar = $"[{_activeTool.Name}]  Zoom: {_zoom}x  Grid: {(_showGrid ? "ON" : "OFF")}  Palette: {_palette.CurrentPalette.Name}";
         _spriteBatch.DrawString(_font, topBar, new Vector2(8, 6), Color.White);
 
         // Status bar
@@ -199,11 +251,50 @@ public class PixelSparkGame : Game
         string status = $"{_canvas.Width}x{_canvas.Height}";
         if (_canvas.InBounds(gridPos.X, gridPos.Y))
             status += $"  ({gridPos.X}, {gridPos.Y})";
+        if (_history.CanUndo) status += "  [Ctrl+Z: Undo]";
+        if (_history.CanRedo) status += "  [Ctrl+Shift+Z: Redo]";
         float statusY = _graphics.PreferredBackBufferHeight - _font.LineSpacing - 6;
         _spriteBatch.DrawString(_font, status, new Vector2(8, statusY), Color.Gray);
 
         _spriteBatch.End();
         base.Draw(gameTime);
+    }
+
+    private void DrawPalette()
+    {
+        var palette = _palette.CurrentPalette;
+        for (int i = 0; i < palette.Colors.Length; i++)
+        {
+            int col = i % PaletteColumns;
+            int row = i / PaletteColumns;
+            int x = PaletteLeft + col * (SwatchSize + SwatchPad);
+            int y = PaletteTop + row * (SwatchSize + SwatchPad);
+            var rect = new Rectangle(x, y, SwatchSize, SwatchSize);
+
+            // Draw swatch
+            _renderer.DrawRect(_spriteBatch, rect, palette.Colors[i]);
+
+            // Highlight active color
+            if (i == _palette.ColorIndex)
+                _renderer.DrawRectOutline(_spriteBatch, new Rectangle(x - 2, y - 2, SwatchSize + 4, SwatchSize + 4), Color.White, 2);
+        }
+    }
+
+    private int HitTestPalette(int screenX, int screenY)
+    {
+        var palette = _palette.CurrentPalette;
+        for (int i = 0; i < palette.Colors.Length; i++)
+        {
+            int col = i % PaletteColumns;
+            int row = i / PaletteColumns;
+            int x = PaletteLeft + col * (SwatchSize + SwatchPad);
+            int y = PaletteTop + row * (SwatchSize + SwatchPad);
+
+            if (screenX >= x && screenX < x + SwatchSize
+                && screenY >= y && screenY < y + SwatchSize)
+                return i;
+        }
+        return -1;
     }
 
     private void CenterCanvas()

@@ -38,7 +38,7 @@ You can open PixelSpark, draw on a canvas with a single color, erase pixels, zoo
 - [ ] Action data structure — list of `(x, y, oldColor, newColor)` changes
 - [ ] ActionHistory — undo stack + redo stack
 - [ ] Compound actions — one drag stroke = one undo step
-- [ ] Undo (Ctrl+Z) / Redo (Ctrl+Y)
+- [ ] Undo (Ctrl+Z) / Redo (Ctrl+Shift+Z)
 - [ ] PaletteManager with built-in presets (NES, CGA, PICO-8, Endesga-32)
 - [ ] Palette UI strip on the left edge — colored rectangles, click to select
 - [ ] Active color highlight in the palette

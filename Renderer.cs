@@ -44,6 +44,23 @@ public class Renderer
             DrawGrid(spriteBatch, canvas, zoom, panOffset);
     }
 
+    public void DrawRect(SpriteBatch spriteBatch, Rectangle rect, Color color)
+    {
+        spriteBatch.Draw(_pixel, rect, color);
+    }
+
+    public void DrawRectOutline(SpriteBatch spriteBatch, Rectangle rect, Color color, int thickness)
+    {
+        // Top
+        spriteBatch.Draw(_pixel, new Rectangle(rect.X, rect.Y, rect.Width, thickness), color);
+        // Bottom
+        spriteBatch.Draw(_pixel, new Rectangle(rect.X, rect.Bottom - thickness, rect.Width, thickness), color);
+        // Left
+        spriteBatch.Draw(_pixel, new Rectangle(rect.X, rect.Y, thickness, rect.Height), color);
+        // Right
+        spriteBatch.Draw(_pixel, new Rectangle(rect.Right - thickness, rect.Y, thickness, rect.Height), color);
+    }
+
     private void DrawGrid(SpriteBatch spriteBatch, Canvas canvas, int zoom, Vector2 panOffset)
     {
         int ox = (int)panOffset.X;

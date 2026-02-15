@@ -6,15 +6,23 @@ public class EraserTool : ITool
 {
     public string Name => "Eraser";
 
-    public void OnPress(Canvas canvas, int x, int y, Color color)
+    public PixelAction OnPress(Canvas canvas, int x, int y, Color color)
     {
-        canvas.SetPixel(x, y, null);
+        var action = new PixelAction();
+        ApplyErase(canvas, x, y, action);
+        return action;
     }
 
-    public void OnDrag(Canvas canvas, int x, int y, Color color)
+    public void OnDrag(Canvas canvas, int x, int y, Color color, PixelAction action)
     {
-        canvas.SetPixel(x, y, null);
+        ApplyErase(canvas, x, y, action);
     }
 
-    public void OnRelease(Canvas canvas) { }
+    private static void ApplyErase(Canvas canvas, int x, int y, PixelAction action)
+    {
+        Color? old = canvas.GetPixel(x, y);
+        if (old == null) return; // already transparent
+        action.Add(new PixelChange(x, y, old, null));
+        canvas.SetPixel(x, y, null);
+    }
 }

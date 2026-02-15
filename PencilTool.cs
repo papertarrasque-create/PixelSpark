@@ -6,15 +6,23 @@ public class PencilTool : ITool
 {
     public string Name => "Pencil";
 
-    public void OnPress(Canvas canvas, int x, int y, Color color)
+    public PixelAction OnPress(Canvas canvas, int x, int y, Color color)
     {
-        canvas.SetPixel(x, y, color);
+        var action = new PixelAction();
+        ApplyPixel(canvas, x, y, color, action);
+        return action;
     }
 
-    public void OnDrag(Canvas canvas, int x, int y, Color color)
+    public void OnDrag(Canvas canvas, int x, int y, Color color, PixelAction action)
     {
-        canvas.SetPixel(x, y, color);
+        ApplyPixel(canvas, x, y, color, action);
     }
 
-    public void OnRelease(Canvas canvas) { }
+    private static void ApplyPixel(Canvas canvas, int x, int y, Color color, PixelAction action)
+    {
+        Color? old = canvas.GetPixel(x, y);
+        if (old.HasValue && old.Value == color) return; // no-op
+        action.Add(new PixelChange(x, y, old, color));
+        canvas.SetPixel(x, y, color);
+    }
 }

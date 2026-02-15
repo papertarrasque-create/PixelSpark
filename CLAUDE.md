@@ -70,7 +70,7 @@ Pencil sets a pixel. Eraser sets a pixel to null. Future tools (fill, line, shap
 | E | Eraser tool |
 | G | Toggle grid |
 | Ctrl+Z | Undo |
-| Ctrl+Y | Redo |
+| Ctrl+Shift+Z | Redo |
 | Ctrl+S | Save PNG |
 | Ctrl+Shift+S | Export sprite sheet |
 | +/- | Zoom in/out |
