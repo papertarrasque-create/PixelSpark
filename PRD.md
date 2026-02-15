@@ -9,21 +9,24 @@ A minimal pixel art editor that feels immediate. Open it, draw, export. No menus
 **Goal:** Get pixels on screen. Make drawing feel responsive and direct.
 
 ### Deliverables
-- [ ] MonoGame project scaffold (DesktopGL, .NET 9)
-- [ ] Canvas data model — 2D `Color?` array, null = transparent
-- [ ] Renderer — draw canvas pixels as `zoom × zoom` rectangles
-- [ ] Screen-to-grid coordinate conversion (mouse position → canvas cell)
-- [ ] Viewport panning (arrow keys + middle mouse drag)
-- [ ] Zoom in/out (+/- keys, centered on canvas)
-- [ ] Pencil tool — click/drag places the active color
-- [ ] Eraser tool — click/drag sets pixels to null
-- [ ] Grid overlay (toggleable with G key)
-- [ ] Checkerboard pattern behind transparent pixels
-- [ ] Top bar — active tool name, zoom level, grid status (text only)
-- [ ] Status bar — canvas dimensions, cursor grid position
+- [x] MonoGame project scaffold (DesktopGL, .NET 9)
+- [x] Canvas data model — 2D `Color?` array, null = transparent
+- [x] Renderer — draw canvas pixels as `zoom × zoom` rectangles
+- [x] Screen-to-grid coordinate conversion (mouse position → canvas cell)
+- [x] Viewport panning (arrow keys + middle mouse drag)
+- [x] Zoom in/out (+/- keys, scroll wheel, centered on canvas)
+- [x] Pencil tool — click/drag places the active color
+- [x] Eraser tool — click/drag sets pixels to null
+- [x] Grid overlay (toggleable with G key, auto-hides below 4x zoom)
+- [x] Checkerboard pattern behind transparent pixels
+- [x] Top bar — active tool name, zoom level, grid status (text only)
+- [x] Status bar — canvas dimensions, cursor grid position
+- [x] Bresenham line interpolation for gap-free fast strokes
 
 ### Done When
 You can open PixelSpark, draw on a canvas with a single color, erase pixels, zoom and pan around, and see exactly where you are at all times. Drawing feels instant — no lag, no missed pixels on fast strokes.
+
+**Status: COMPLETE**
 
 ---
 
