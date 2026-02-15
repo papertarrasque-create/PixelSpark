@@ -56,13 +56,22 @@ You can draw with any color from a palette, undo/redo freely without losing work
 **Goal:** Connect the editor to the outside world.
 
 ### Deliverables
-- [ ] Save canvas as PNG (Ctrl+S) via `Texture2D.SaveAsPng()`
-- [ ] Load PNG into canvas via `Texture2D.FromStream()`
-- [ ] New canvas dialog — text input for width and height (Ctrl+N)
-- [ ] Overwrite confirmation when saving to an existing file
+- [x] Modal system — overlay state that captures input away from the canvas
+- [x] Text input component — keyboard capture, cursor, backspace, Enter/Escape
+- [x] Save canvas as PNG (Ctrl+S) — typed file path, silent overwrite on subsequent saves
+- [x] Save As (Ctrl+Shift+S) — prompt for new path
+- [x] Load PNG into canvas (Ctrl+O) via `Texture2D.FromStream()`
+- [x] New canvas dialog — text input for width and height (Ctrl+N)
+- [x] Overwrite confirmation when saving to an existing file
+- [x] Smart defaults — pre-fill last used directory, auto-append .png, tilde expansion
+
+### Notes
+File paths are typed, not browsed. This is a deliberate scope choice — the text input component is small, dependency-free, and reusable across all dialogs. A visual file browser is a potential future enhancement (not debt — typed paths are a complete, shippable feature).
 
 ### Done When
 You can create a sprite, save it as a PNG, close the app, reopen, load the PNG, and continue editing exactly where you left off. Round-trip is lossless.
+
+**Status: COMPLETE**
 
 ---
 

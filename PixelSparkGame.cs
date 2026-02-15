@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -18,7 +19,7 @@ public class PixelSparkGame : Game
     private readonly PencilTool _pencilTool = new();
     private readonly EraserTool _eraserTool = new();
 
-    private readonly ActionHistory _history = new();
+    private ActionHistory _history = new();
     private PixelAction _currentAction;
 
     private readonly PaletteManager _palette = new();
@@ -47,6 +48,16 @@ public class PixelSparkGame : Game
     private const int SwatchPad = 2;
     private const int PaletteColumns = 2;
 
+    // Dialog system
+    private IDialog _activeDialog;
+    private Action<IDialog> _onDialogComplete;
+
+    // File I/O state
+    private string _currentFilePath;
+    private string _lastDirectory;
+    private string _statusMessage;
+    private double _statusTimer;
+
     public PixelSparkGame()
     {
         _graphics = new GraphicsDeviceManager(this);
@@ -64,9 +75,17 @@ public class PixelSparkGame : Game
         _canvas = new Canvas(32, 32);
         _activeTool = _pencilTool;
         _zoom = ZoomLevels[_zoomIndex];
+        _lastDirectory = Environment.CurrentDirectory;
         CenterCanvas();
 
+        Window.TextInput += OnTextInput;
+
         base.Initialize();
+    }
+
+    private void OnTextInput(object sender, TextInputEventArgs e)
+    {
+        _activeDialog?.OnTextInput(e.Character);
     }
 
     protected override void LoadContent()
@@ -81,20 +100,194 @@ public class PixelSparkGame : Game
         var keyboard = Keyboard.GetState();
         var mouse = Mouse.GetState();
 
-        HandleKeyboard(keyboard);
-        HandleMouse(mouse);
+        // Tick status message timer
+        if (_statusMessage != null)
+        {
+            _statusTimer -= gameTime.ElapsedGameTime.TotalSeconds;
+            if (_statusTimer <= 0)
+                _statusMessage = null;
+        }
+
+        if (_activeDialog != null)
+        {
+            _activeDialog.Update(keyboard, _prevKeyboard, gameTime);
+
+            if (_activeDialog.IsComplete)
+            {
+                var dialog = _activeDialog;
+                var callback = _onDialogComplete;
+                _activeDialog = null;
+                _onDialogComplete = null;
+                callback?.Invoke(dialog);
+            }
+        }
+        else
+        {
+            HandleKeyboard(keyboard);
+            HandleMouse(mouse);
+        }
 
         _prevKeyboard = keyboard;
         _prevMouse = mouse;
         base.Update(gameTime);
     }
 
+    private void ShowDialog(IDialog dialog, Action<IDialog> onComplete)
+    {
+        _activeDialog = dialog;
+        _onDialogComplete = onComplete;
+    }
+
+    private void ShowStatus(string message, double seconds = 2.0)
+    {
+        _statusMessage = message;
+        _statusTimer = seconds;
+    }
+
+    private void UpdateTitle()
+    {
+        if (_currentFilePath != null)
+            Window.Title = $"PixelSpark — {Path.GetFileName(_currentFilePath)}";
+        else
+            Window.Title = "PixelSpark";
+    }
+
+    // --- File I/O flows ---
+
+    private void StartSave()
+    {
+        if (_currentFilePath != null)
+        {
+            DoSave(_currentFilePath);
+            return;
+        }
+        StartSaveAs();
+    }
+
+    private void StartSaveAs()
+    {
+        string defaultPath = _currentFilePath
+            ?? Path.Combine(_lastDirectory, "untitled.png");
+
+        ShowDialog(new InputDialog("Save As:", defaultPath), dialog =>
+        {
+            var input = (InputDialog)dialog;
+            if (input.WasCancelled) return;
+
+            string path = ExpandPath(input.ResultText);
+            if (File.Exists(path) && path != _currentFilePath)
+            {
+                ShowDialog(new ConfirmDialog($"Overwrite {Path.GetFileName(path)}?"), confirm =>
+                {
+                    if (((ConfirmDialog)confirm).Confirmed)
+                        DoSave(path);
+                });
+            }
+            else
+            {
+                DoSave(path);
+            }
+        });
+    }
+
+    private void DoSave(string path)
+    {
+        try
+        {
+            FileIO.SaveCanvasAsPng(_canvas, GraphicsDevice, path);
+            _currentFilePath = path;
+            _lastDirectory = Path.GetDirectoryName(path);
+            UpdateTitle();
+            ShowStatus($"Saved: {Path.GetFileName(path)}");
+        }
+        catch (Exception ex)
+        {
+            ShowStatus($"Save failed: {ex.Message}", 4.0);
+        }
+    }
+
+    private void StartLoad()
+    {
+        string defaultPath = _lastDirectory + Path.DirectorySeparatorChar;
+
+        ShowDialog(new InputDialog("Open File:", defaultPath), dialog =>
+        {
+            var input = (InputDialog)dialog;
+            if (input.WasCancelled) return;
+
+            string path = ExpandPath(input.ResultText);
+            try
+            {
+                _canvas = FileIO.LoadCanvasFromPng(GraphicsDevice, path);
+                _history = new ActionHistory();
+                _currentFilePath = path;
+                _lastDirectory = Path.GetDirectoryName(path);
+                CenterCanvas();
+                UpdateTitle();
+                ShowStatus($"Loaded: {Path.GetFileName(path)}");
+            }
+            catch (Exception ex)
+            {
+                ShowStatus($"Load failed: {ex.Message}", 4.0);
+            }
+        });
+    }
+
+    private void StartNewCanvas()
+    {
+        ShowDialog(new NewCanvasDialog(_canvas.Width, _canvas.Height), dialog =>
+        {
+            var newDialog = (NewCanvasDialog)dialog;
+            if (newDialog.WasCancelled) return;
+
+            _canvas = new Canvas(newDialog.ResultWidth, newDialog.ResultHeight);
+            _history = new ActionHistory();
+            _currentFilePath = null;
+            CenterCanvas();
+            UpdateTitle();
+            ShowStatus($"New canvas: {newDialog.ResultWidth}x{newDialog.ResultHeight}");
+        });
+    }
+
+    private static string ExpandPath(string path)
+    {
+        if (path.StartsWith('~'))
+            path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + path[1..];
+        if (string.IsNullOrEmpty(Path.GetExtension(path)))
+            path += ".png";
+        return Path.GetFullPath(path);
+    }
+
+    // --- Input handling ---
+
     private void HandleKeyboard(KeyboardState keyboard)
     {
         bool ctrl = keyboard.IsKeyDown(Keys.LeftControl) || keyboard.IsKeyDown(Keys.RightControl);
+        bool shift = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
+
+        // File I/O shortcuts
+        if (ctrl && shift && KeyPressed(keyboard, Keys.S))
+        {
+            StartSaveAs();
+            return;
+        }
+        if (ctrl && !shift && KeyPressed(keyboard, Keys.S))
+        {
+            StartSave();
+            return;
+        }
+        if (ctrl && KeyPressed(keyboard, Keys.O))
+        {
+            StartLoad();
+            return;
+        }
+        if (ctrl && KeyPressed(keyboard, Keys.N))
+        {
+            StartNewCanvas();
+            return;
+        }
 
         // Undo / Redo (redo check first — Ctrl+Shift+Z includes Ctrl+Z)
-        bool shift = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
         if (ctrl && shift && KeyPressed(keyboard, Keys.Z))
         {
             _history.Redo(_canvas);
@@ -232,6 +425,8 @@ public class PixelSparkGame : Game
         }
     }
 
+    // --- Drawing ---
+
     protected override void Draw(GameTime gameTime)
     {
         GraphicsDevice.Clear(new Color(30, 30, 30));
@@ -251,10 +446,19 @@ public class PixelSparkGame : Game
         string status = $"{_canvas.Width}x{_canvas.Height}";
         if (_canvas.InBounds(gridPos.X, gridPos.Y))
             status += $"  ({gridPos.X}, {gridPos.Y})";
+        if (_statusMessage != null)
+            status += $"  {_statusMessage}";
+        else if (_currentFilePath != null)
+            status += $"  [{Path.GetFileName(_currentFilePath)}]";
         if (_history.CanUndo) status += "  [Ctrl+Z: Undo]";
         if (_history.CanRedo) status += "  [Ctrl+Shift+Z: Redo]";
         float statusY = _graphics.PreferredBackBufferHeight - _font.LineSpacing - 6;
         _spriteBatch.DrawString(_font, status, new Vector2(8, statusY), Color.Gray);
+
+        // Dialog overlay
+        if (_activeDialog != null)
+            _activeDialog.Draw(_spriteBatch, _font, _renderer,
+                _graphics.PreferredBackBufferWidth, _graphics.PreferredBackBufferHeight, gameTime);
 
         _spriteBatch.End();
         base.Draw(gameTime);

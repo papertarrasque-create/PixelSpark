@@ -23,9 +23,12 @@ workbench/PixelSpark/
 - Tools produce Actions (reversible change records), not direct canvas mutations
 - Palette is a UI/workflow concept — switching palettes doesn't alter canvas data
 - Performance: rebuild Texture2D from array each frame (fine for sprite-sized canvases up to ~256×256)
+- File paths are typed, not browsed — deliberate scope choice. A visual file browser would be throwaway work since PixelSpark is destined for engine integration (the engine provides its own asset browser). Typed paths are a complete, shippable feature.
+- Auto-append `.png` if no extension given, tilde expansion for home directory paths
 
 ## Current Phase
-**Phase 1 — Canvas and Drawing** (not started)
+**Phase 3 — File I/O** (complete)
 
 ## Recent History
 - **Session 5 (2026-02-15):** Created PRD.md and PROJECT_MEMORY.md. Initialized GitHub repo. Starting Phase 1.
+- **Session 6 (2026-02-15):** Completed Phase 3 — File I/O. Built modal dialog system (IDialog interface), reusable TextInputField with scissor-clipped scrolling, InputDialog (save/load paths), NewCanvasDialog (width/height with validation), ConfirmDialog (Y/N overwrite). Wired Ctrl+S/Ctrl+Shift+S/Ctrl+O/Ctrl+N flows into PixelSparkGame. Window title updates on save/load, status bar shows file name and timed messages. Discussed file browser vs typed path — chose typed path because a standalone file browser is throwaway work for a tool headed into an engine. Added versioning policy to CLAUDE.md. New files: FileIO.cs, TextInputField.cs, IDialog.cs, InputDialog.cs, NewCanvasDialog.cs, ConfirmDialog.cs. Modified: PixelSparkGame.cs.

@@ -104,10 +104,15 @@ Make editing safe and give the artist colors to work with.
 
 ### Phase 3 — File I/O
 Connect the editor to the outside world.
-- Save canvas as PNG (Ctrl+S)
-- Load PNG into canvas
-- New canvas dialog (text input for width/height)
-- Recent file tracking (optional, only if simple)
+- Modal system — overlay state that captures input, prevents canvas interaction while a dialog is open
+- Text input component — keyboard capture, cursor rendering, backspace, Enter to confirm, Escape to cancel
+- Save canvas as PNG (Ctrl+S) — first save prompts for typed file path, subsequent saves are silent
+- Save As (Ctrl+Shift+S) — always prompts for a new path
+- Load PNG into canvas (Ctrl+O)
+- New canvas dialog (Ctrl+N) — text input for width/height
+- Overwrite confirmation on first save to an existing path
+- Smart path defaults (last used directory or launch directory)
+- Note: File paths are typed, not browsed. A visual file browser is a potential future enhancement, not a gap — typed paths are a complete, shippable feature.
 
 ### Phase 4 — Sprite Sheet
 The game-dev payoff.
@@ -137,6 +142,16 @@ Hooks for added complexity. Each tool implements ITool.
 - **Coordinate system:** Grid position (0,0) is top-left of the canvas. Screen position calculated as `gridPos * zoom + panOffset`.
 - **Transparency:** Rendered as a checkerboard pattern (light/dark gray) behind the canvas, standard in image editors.
 - **Performance:** For sprite-sized canvases (up to ~256×256), rebuilding a Texture2D from the color array each frame is fine. No need for GPU-side editing or dirty-rect optimization unless we hit a wall.
+
+## Version Control
+- Commit rhythm. We commit at phase boundaries, not per-file. A phase is the atomic unit — it either ships whole or it doesn't. That tells the next session "don't commit half of Phase 4" without needing to explain the whole workflow.
+
+- What triggers a commit. The sequence is: discuss approach, build, review together, then commit. The review step is where we catch things (like the text overflow and auto-append just now). A future session should know not to commit immediately after building — the review pass is part of the process.
+
+- PRD as source of truth. When a phase commits, its checkboxes get checked and its status line changes to **Status: COMPLETE**. That's how any session knows where the project stands at a glance.
+
+- PROJECT_MEMORY.md gets a session entry. What happened, what decisions were made, anything the next session needs to know. This is the handoff.
+
 
 ## Future: Engine Integration
 
