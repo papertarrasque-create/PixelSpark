@@ -35,17 +35,19 @@ You can open PixelSpark, draw on a canvas with a single color, erase pixels, zoo
 **Goal:** Make editing safe and give the artist colors to work with.
 
 ### Deliverables
-- [ ] Action data structure — list of `(x, y, oldColor, newColor)` changes
-- [ ] ActionHistory — undo stack + redo stack
-- [ ] Compound actions — one drag stroke = one undo step
-- [ ] Undo (Ctrl+Z) / Redo (Ctrl+Shift+Z)
-- [ ] PaletteManager with built-in presets (NES, CGA, PICO-8, Endesga-32)
-- [ ] Palette UI strip on the left edge — colored rectangles, click to select
-- [ ] Active color highlight in the palette
-- [ ] Palette switching (keyboard shortcut or small selector)
+- [x] Action data structure — list of `(x, y, oldColor, newColor)` changes
+- [x] ActionHistory — undo stack + redo stack
+- [x] Compound actions — one drag stroke = one undo step
+- [x] Undo (Ctrl+Z) / Redo (Ctrl+Shift+Z)
+- [x] PaletteManager with built-in presets (NES, CGA, PICO-8, Endesga-32)
+- [x] Palette UI strip on the left edge — colored rectangles, click to select
+- [x] Active color highlight in the palette
+- [x] Palette switching (keyboard shortcut or small selector)
 
 ### Done When
 You can draw with any color from a palette, undo/redo freely without losing work, and switch between palette presets. A full drag stroke undoes in one step, not pixel by pixel.
+
+**Status: COMPLETE**
 
 ---
 
