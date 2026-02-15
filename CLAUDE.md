@@ -70,10 +70,22 @@ Pencil sets a pixel. Eraser sets a pixel to null. Future tools (fill, line, shap
 |-----|--------|
 | B | Pencil tool |
 | E | Eraser tool |
+| I | Eyedropper tool |
+| F | Fill tool |
+| L | Line tool |
+| R | Rectangle tool (outline) |
+| Shift+R | Rectangle tool (filled) |
+| S | Selection tool |
 | G | Toggle grid |
 | V | Toggle sheet preview |
 | Ctrl+Z | Undo |
 | Ctrl+Shift+Z | Redo |
+| Ctrl+C | Copy selection |
+| Ctrl+X | Cut selection |
+| Ctrl+V | Paste clipboard |
+| Ctrl+M | Mirror horizontal |
+| Ctrl+Shift+M | Flip vertical |
+| Escape | Deselect / commit float |
 | Ctrl+S | Save project (.pxs) |
 | Ctrl+Shift+S | Save project as |
 | Ctrl+O | Open project or PNG |
@@ -135,16 +147,16 @@ The game-dev payoff.
 - Sprite sheet import (split image into equal-size frames)
 - Save/load project (custom JSON format preserving all sprites + metadata)
 
-### Phase 5 — Tool Expansion (Post-v1)
-Hooks for added complexity. Each tool implements ITool.
-- Flood fill (recursive or queue-based)
-- Line tool (Bresenham's algorithm)
-- Rectangle tool (outline and filled)
-- Color picker / eyedropper (sample color from canvas)
-- Selection + move
-- Copy/paste (within and between sprites)
-- Mirror/flip
-- Palette editor (modify and save custom palettes)
+### Phase 5 — Tool Expansion
+Richer editing tools. Each implements ITool with optional `DrawPreview`, `InterpolateDrag`, and `OnRelease(Canvas, PixelAction)`.
+- Eyedropper (sample from canvas, cross-palette search)
+- Flood fill (queue-based, 4-connected, exact color match)
+- Line tool (Bresenham with preview overlay)
+- Rectangle tool (outline + filled, with preview overlay)
+- Mirror/flip (canvas operations via Ctrl+M / Ctrl+Shift+M)
+- Selection + move (floating pixel buffer, lift/stamp lifecycle)
+- Copy/paste (Ctrl+C/X/V, clipboard at game level, works across sprites)
+- Bresenham algorithm extracted to `PixelMath` utility class
 
 ## Technical Notes
 
@@ -164,6 +176,10 @@ Hooks for added complexity. Each tool implements ITool.
 
 - PROJECT_MEMORY.md gets a session entry. What happened, what decisions were made, anything the next session needs to know. This is the handoff.
 
+
+## Future: Deferred Features
+
+- **Palette editor** — Modify and save custom palettes. Lets artists create and persist their own color sets beyond the built-in presets (PICO-8, NES, CGA, Endesga-32). Was originally part of Phase 5 but deferred as lower priority than the core drawing/selection tools.
 
 ## Future: Engine Integration
 

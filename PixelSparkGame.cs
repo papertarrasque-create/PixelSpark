@@ -18,6 +18,11 @@ public class PixelSparkGame : Game
     private ITool _activeTool;
     private readonly PencilTool _pencilTool = new();
     private readonly EraserTool _eraserTool = new();
+    private EyedropperTool _eyedropperTool;
+    private readonly FillTool _fillTool = new();
+    private readonly LineTool _lineTool = new();
+    private readonly RectangleTool _rectangleTool = new();
+    private readonly SelectionTool _selectTool = new();
 
     private PixelAction _currentAction;
 
@@ -65,6 +70,9 @@ public class PixelSparkGame : Game
     private bool _sheetPreview;
     private int _sheetColumns;
 
+    // Clipboard (game-level, works across sprites)
+    private Color?[,] _clipboard;
+
     // File I/O state
     private string _projectFilePath;
     private string _lastDirectory;
@@ -87,6 +95,11 @@ public class PixelSparkGame : Game
 
         _project = new Project(32, 32);
         _activeTool = _pencilTool;
+        _eyedropperTool = new EyedropperTool(color =>
+        {
+            if (!_palette.SelectColorFromAll(color))
+                ShowStatus($"Not in palette: #{color.R:X2}{color.G:X2}{color.B:X2}");
+        });
         _zoom = ZoomLevels[_zoomIndex];
         _lastDirectory = Environment.CurrentDirectory;
         CenterCanvas();
@@ -466,6 +479,23 @@ public class PixelSparkGame : Game
             return;
         }
 
+        // Copy / Cut / Paste
+        if (ctrl && !shift && KeyPressed(keyboard, Keys.C))
+        {
+            CopySelection();
+            return;
+        }
+        if (ctrl && !shift && KeyPressed(keyboard, Keys.X))
+        {
+            CutSelection();
+            return;
+        }
+        if (ctrl && !shift && KeyPressed(keyboard, Keys.V))
+        {
+            PasteClipboard();
+            return;
+        }
+
         // Sprite sheet import: Ctrl+I
         if (ctrl && KeyPressed(keyboard, Keys.I))
         {
@@ -477,6 +507,11 @@ public class PixelSparkGame : Game
         if (ctrl && KeyPressed(keyboard, Keys.Tab))
         {
             FinishDrawing();
+            if (_activeTool is SelectionTool cycleSel && (cycleSel.HasFloat || cycleSel.HasSelection))
+            {
+                var commitAction = cycleSel.CommitFloat(Canvas);
+                History.Push(commitAction);
+            }
             if (shift)
                 _project.SetActive((_project.ActiveIndex - 1 + _project.Sprites.Count) % _project.Sprites.Count);
             else
@@ -497,9 +532,47 @@ public class PixelSparkGame : Game
             return;
         }
 
-        // Tool switching
-        if (KeyPressed(keyboard, Keys.B)) _activeTool = _pencilTool;
-        if (KeyPressed(keyboard, Keys.E)) _activeTool = _eraserTool;
+        // Mirror / flip
+        if (ctrl && shift && KeyPressed(keyboard, Keys.M))
+        {
+            FinishDrawing();
+            FlipVertical();
+            return;
+        }
+        if (ctrl && !shift && KeyPressed(keyboard, Keys.M))
+        {
+            FinishDrawing();
+            MirrorHorizontal();
+            return;
+        }
+
+        // Escape: deselect / commit float
+        if (KeyPressed(keyboard, Keys.Escape) && _activeTool is SelectionTool escSel)
+        {
+            if (escSel.HasFloat || escSel.HasSelection)
+            {
+                FinishDrawing();
+                var commitAction = escSel.CommitFloat(Canvas);
+                History.Push(commitAction);
+                return;
+            }
+        }
+
+        // Tool switching (only when not drawing)
+        if (!_isDrawing)
+        {
+            if (KeyPressed(keyboard, Keys.B)) SwitchTool(_pencilTool);
+            if (KeyPressed(keyboard, Keys.E)) SwitchTool(_eraserTool);
+            if (KeyPressed(keyboard, Keys.I) && !ctrl) SwitchTool(_eyedropperTool);
+            if (KeyPressed(keyboard, Keys.F)) SwitchTool(_fillTool);
+            if (KeyPressed(keyboard, Keys.L)) SwitchTool(_lineTool);
+            if (!ctrl && KeyPressed(keyboard, Keys.R))
+            {
+                SwitchTool(_rectangleTool);
+                _rectangleTool.Filled = shift;
+            }
+            if (KeyPressed(keyboard, Keys.S) && !ctrl) SwitchTool(_selectTool);
+        }
 
         // Grid toggle
         if (KeyPressed(keyboard, Keys.G)) _showGrid = !_showGrid;
@@ -541,7 +614,8 @@ public class PixelSparkGame : Game
     private void FinishDrawing()
     {
         if (!_isDrawing) return;
-        _activeTool.OnRelease();
+        if (_currentAction != null)
+            _activeTool.OnRelease(Canvas, _currentAction);
         if (_currentAction != null)
         {
             History.Push(_currentAction);
@@ -549,6 +623,154 @@ public class PixelSparkGame : Game
         }
         _isDrawing = false;
         _lastGridPos = new Point(-1, -1);
+    }
+
+    private void SwitchTool(ITool newTool)
+    {
+        FinishDrawing();
+        if (_activeTool is SelectionTool sel && (sel.HasFloat || sel.HasSelection))
+        {
+            var commitAction = sel.CommitFloat(Canvas);
+            History.Push(commitAction);
+        }
+        _activeTool = newTool;
+    }
+
+    private void MirrorHorizontal()
+    {
+        var action = new PixelAction();
+        int w = Canvas.Width;
+        int h = Canvas.Height;
+
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w / 2; x++)
+            {
+                int mx = w - 1 - x;
+                Color? left = Canvas.GetPixel(x, y);
+                Color? right = Canvas.GetPixel(mx, y);
+
+                if (left != right)
+                {
+                    action.Add(new PixelChange(x, y, left, right));
+                    action.Add(new PixelChange(mx, y, right, left));
+                    Canvas.SetPixel(x, y, right);
+                    Canvas.SetPixel(mx, y, left);
+                }
+            }
+        }
+
+        History.Push(action);
+    }
+
+    private void FlipVertical()
+    {
+        var action = new PixelAction();
+        int w = Canvas.Width;
+        int h = Canvas.Height;
+
+        for (int x = 0; x < w; x++)
+        {
+            for (int y = 0; y < h / 2; y++)
+            {
+                int my = h - 1 - y;
+                Color? top = Canvas.GetPixel(x, y);
+                Color? bottom = Canvas.GetPixel(x, my);
+
+                if (top != bottom)
+                {
+                    action.Add(new PixelChange(x, y, top, bottom));
+                    action.Add(new PixelChange(x, my, bottom, top));
+                    Canvas.SetPixel(x, y, bottom);
+                    Canvas.SetPixel(x, my, top);
+                }
+            }
+        }
+
+        History.Push(action);
+    }
+
+    private void CopySelection()
+    {
+        if (_activeTool is not SelectionTool sel || !sel.HasSelection) return;
+
+        if (sel.HasFloat)
+        {
+            _clipboard = sel.CloneFloatingPixels();
+        }
+        else
+        {
+            var rect = sel.SelectionRect.Value;
+            _clipboard = new Color?[rect.Width, rect.Height];
+            for (int y = 0; y < rect.Height; y++)
+                for (int x = 0; x < rect.Width; x++)
+                    _clipboard[x, y] = Canvas.GetPixel(rect.X + x, rect.Y + y);
+        }
+        ShowStatus("Copied");
+    }
+
+    private void CutSelection()
+    {
+        if (_activeTool is not SelectionTool sel || !sel.HasSelection) return;
+
+        CopySelection();
+
+        if (sel.HasFloat)
+        {
+            var discardAction = sel.DiscardFloat();
+            History.Push(discardAction);
+        }
+        else
+        {
+            var rect = sel.SelectionRect.Value;
+            var action = new PixelAction();
+            for (int y = 0; y < rect.Height; y++)
+            {
+                for (int x = 0; x < rect.Width; x++)
+                {
+                    int cx = rect.X + x;
+                    int cy = rect.Y + y;
+                    Color? old = Canvas.GetPixel(cx, cy);
+                    if (old != null)
+                    {
+                        action.Add(new PixelChange(cx, cy, old, null));
+                        Canvas.SetPixel(cx, cy, null);
+                    }
+                }
+            }
+            History.Push(action);
+            sel.ClearSelection();
+        }
+        ShowStatus("Cut");
+    }
+
+    private void PasteClipboard()
+    {
+        if (_clipboard == null)
+        {
+            ShowStatus("Nothing to paste");
+            return;
+        }
+
+        // Switch to selection tool if not already
+        if (_activeTool is not SelectionTool)
+            SwitchTool(_selectTool);
+
+        // Commit any existing float
+        if (_selectTool.HasFloat)
+        {
+            var commitAction = _selectTool.CommitFloat(Canvas);
+            History.Push(commitAction);
+        }
+
+        // Create a float from clipboard at canvas center
+        int cw = _clipboard.GetLength(0);
+        int ch = _clipboard.GetLength(1);
+        int px = (Canvas.Width - cw) / 2;
+        int py = (Canvas.Height - ch) / 2;
+
+        _selectTool.SetFloat((Color?[,])_clipboard.Clone(), px, py);
+        ShowStatus("Pasted");
     }
 
     private void AdjustZoom(int direction)
@@ -626,6 +848,11 @@ public class PixelSparkGame : Game
                 if (tabIndex != _project.ActiveIndex)
                 {
                     FinishDrawing();
+                    if (_activeTool is SelectionTool tabSel && (tabSel.HasFloat || tabSel.HasSelection))
+                    {
+                        var commitAction = tabSel.CommitFloat(Canvas);
+                        History.Push(commitAction);
+                    }
                     _project.SetActive(tabIndex);
                     if (!_sheetPreview) CenterCanvas();
                 }
@@ -643,6 +870,11 @@ public class PixelSparkGame : Game
                 int frameIndex = HitTestSheetFrame(mouse.X, mouse.Y);
                 if (frameIndex >= 0)
                 {
+                    if (_activeTool is SelectionTool frameSel && (frameSel.HasFloat || frameSel.HasSelection))
+                    {
+                        var commitAction = frameSel.CommitFloat(Canvas);
+                        History.Push(commitAction);
+                    }
                     _project.SetActive(frameIndex);
                     _sheetPreview = false;
                     CenterCanvas();
@@ -671,10 +903,17 @@ public class PixelSparkGame : Game
             }
             else if (gridPos != _lastGridPos && _lastGridPos.X >= 0 && _currentAction != null)
             {
-                foreach (var p in BresenhamLine(_lastGridPos.X, _lastGridPos.Y, gridPos.X, gridPos.Y))
+                if (_activeTool.InterpolateDrag)
                 {
-                    if (Canvas.InBounds(p.X, p.Y))
-                        _activeTool.OnDrag(Canvas, p.X, p.Y, activeColor, _currentAction);
+                    foreach (var p in PixelMath.BresenhamLine(_lastGridPos.X, _lastGridPos.Y, gridPos.X, gridPos.Y))
+                    {
+                        if (Canvas.InBounds(p.X, p.Y))
+                            _activeTool.OnDrag(Canvas, p.X, p.Y, activeColor, _currentAction);
+                    }
+                }
+                else
+                {
+                    _activeTool.OnDrag(Canvas, gridPos.X, gridPos.Y, activeColor, _currentAction);
                 }
                 _lastGridPos = gridPos;
             }
@@ -704,9 +943,13 @@ public class PixelSparkGame : Game
         if (_sheetPreview)
             DrawSheetPreview();
         else
+        {
             _renderer.DrawCanvas(_spriteBatch, Canvas, _zoom, _panOffset, _showGrid);
+            _activeTool.DrawPreview(_spriteBatch, _renderer, Canvas, _zoom, _panOffset);
+        }
 
         DrawPalette();
+        DrawToolbar();
         DrawSpriteTabs();
 
         // Top bar
@@ -912,6 +1155,37 @@ public class PixelSparkGame : Game
         }
     }
 
+    private static readonly (Keys Key, string Label, string Modifier)[] ToolShortcuts =
+    {
+        (Keys.B, "Pencil", null),
+        (Keys.E, "Eraser", null),
+        (Keys.I, "Eyedrop", null),
+        (Keys.F, "Fill", null),
+        (Keys.L, "Line", null),
+        (Keys.R, "Rect", null),
+        (Keys.S, "Select", null),
+    };
+
+    private void DrawToolbar()
+    {
+        int x = PaletteLeft + PaletteColumns * (SwatchSize + SwatchPad) + 6;
+        int y = PaletteTop;
+        int lineHeight = _font.LineSpacing + 2;
+
+        foreach (var (key, label, _) in ToolShortcuts)
+        {
+            bool isActive = _activeTool.Name.StartsWith(label, StringComparison.Ordinal)
+                || (label == "Rect" && _activeTool is RectangleTool)
+                || (label == "Eyedrop" && _activeTool is EyedropperTool);
+
+            string text = $"{key} {label}";
+            Color color = isActive ? Color.White : new Color(80, 80, 80);
+
+            _spriteBatch.DrawString(_font, text, new Vector2(x, y), color);
+            y += lineHeight;
+        }
+    }
+
     private int HitTestPalette(int screenX, int screenY)
     {
         var palette = _palette.CurrentPalette;
@@ -948,21 +1222,4 @@ public class PixelSparkGame : Game
         return current.IsKeyDown(key) && _prevKeyboard.IsKeyUp(key);
     }
 
-    private static IEnumerable<Point> BresenhamLine(int x0, int y0, int x1, int y1)
-    {
-        int dx = Math.Abs(x1 - x0);
-        int dy = Math.Abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1;
-        int sy = y0 < y1 ? 1 : -1;
-        int err = dx - dy;
-
-        while (true)
-        {
-            yield return new Point(x0, y0);
-            if (x0 == x1 && y0 == y1) break;
-            int e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x0 += sx; }
-            if (e2 < dx) { err += dx; y0 += sy; }
-        }
-    }
 }

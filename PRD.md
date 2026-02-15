@@ -104,17 +104,22 @@ You can create a project with multiple sprites, edit them individually, export a
 **Goal:** Richer editing tools. Each implements the ITool interface.
 
 ### Deliverables
-- [ ] Flood fill (queue-based)
-- [ ] Line tool (Bresenham's algorithm)
-- [ ] Rectangle tool (outline + filled variants)
-- [ ] Eyedropper — sample color from canvas
-- [ ] Selection + move
-- [ ] Copy/paste (within and between sprites)
-- [ ] Mirror / flip
-- [ ] Palette editor — modify and save custom palettes
+- [x] Flood fill (queue-based)
+- [x] Line tool (Bresenham's algorithm)
+- [x] Rectangle tool (outline + filled variants)
+- [x] Eyedropper — sample color from canvas, cross-palette search
+- [x] Selection + move
+- [x] Copy/paste (within and between sprites)
+- [x] Mirror / flip
+- [ ] Palette editor — modify and save custom palettes (deferred to future phase)
+
+### Notes
+All tools implement ITool with three new interface members: `DrawPreview` (optional overlay rendering), `InterpolateDrag` (controls Bresenham interpolation for drag), and `OnRelease(Canvas, PixelAction)` (deferred commit for line/rectangle tools). Selection tool manages floating pixel buffers with lift/stamp/commit lifecycle. Clipboard lives at game level for cross-sprite paste. Bresenham algorithm extracted to `PixelMath` utility class.
 
 ### Done When
 The tool set covers the core operations a pixel artist needs for sprite work. Every tool follows the same interface, and adding new ones is straightforward.
+
+**Status: COMPLETE** (palette editor deferred)
 
 ---
 

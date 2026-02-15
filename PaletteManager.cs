@@ -40,6 +40,41 @@ public class PaletteManager
         _paletteIndex = (_paletteIndex - 1 + _palettes.Count) % _palettes.Count;
         _colorIndex = 0;
     }
+
+    /// <summary>
+    /// Search all palettes for an exact color match.
+    /// Prefers the current palette. Switches palette if found elsewhere.
+    /// Returns true if a match was found.
+    /// </summary>
+    public bool SelectColorFromAll(Color color)
+    {
+        // Search current palette first
+        for (int i = 0; i < CurrentPalette.Colors.Length; i++)
+        {
+            if (CurrentPalette.Colors[i] == color)
+            {
+                _colorIndex = i;
+                return true;
+            }
+        }
+
+        // Search all other palettes
+        for (int p = 0; p < _palettes.Count; p++)
+        {
+            if (p == _paletteIndex) continue;
+            for (int i = 0; i < _palettes[p].Colors.Length; i++)
+            {
+                if (_palettes[p].Colors[i] == color)
+                {
+                    _paletteIndex = p;
+                    _colorIndex = i;
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 }
 
 public class Palette
