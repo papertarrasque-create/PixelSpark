@@ -43,7 +43,8 @@ Pencil sets a pixel. Eraser sets a pixel to null. Future tools (fill, line, shap
 
 ```
 ┌──────────────────────────────────┐
-│ [Tool] [Zoom] [Grid]             │
+│ [Tool] [Zoom] [Grid] [Palette]   │
+│ [Sprite 1] [Sprite 2] [+]       │
 │  P  ┌──────────────────────────┐ │
 │  A  │                          │ │
 │  L  │                          │ │
@@ -56,10 +57,11 @@ Pencil sets a pixel. Eraser sets a pixel to null. Future tools (fill, line, shap
 └──────────────────────────────────┘
 ```
 
-- **Top bar:** Active tool indicator, zoom level, grid toggle. Text only, no icons in v1.
-- **Canvas area:** Center, takes most of the window. Pannable, zoomable.
+- **Top bar:** Active tool indicator, zoom level, grid toggle, palette name. In sheet preview: shows SHEET PREVIEW with sprite count.
+- **Sprite tab bar:** Below top bar. Clickable tabs for each sprite, [+] to add. Active sprite highlighted.
+- **Canvas area:** Center, takes most of the window. Pannable, zoomable. In sheet preview mode (V), shows all sprites tiled in a grid.
 - **Palette strip:** Left edge, vertical. Colored rectangles. Click to select. Current color highlighted.
-- **Status bar:** Bottom. Sprite name, canvas dimensions, cursor grid position.
+- **Status bar:** Bottom. Sprite name, canvas dimensions, cursor grid position, sprite index.
 - All UI rendered directly with MonoGame (SpriteBatch + font). No UI framework.
 
 ### Keyboard Shortcuts
@@ -69,13 +71,23 @@ Pencil sets a pixel. Eraser sets a pixel to null. Future tools (fill, line, shap
 | B | Pencil tool |
 | E | Eraser tool |
 | G | Toggle grid |
+| V | Toggle sheet preview |
 | Ctrl+Z | Undo |
 | Ctrl+Shift+Z | Redo |
-| Ctrl+S | Save PNG |
-| Ctrl+Shift+S | Export sprite sheet |
+| Ctrl+S | Save project (.pxs) |
+| Ctrl+Shift+S | Save project as |
+| Ctrl+O | Open project or PNG |
+| Ctrl+N | New project |
+| Ctrl+T | Add sprite |
+| Ctrl+W | Remove sprite |
+| F2 | Rename sprite |
+| Ctrl+Tab | Next sprite |
+| Ctrl+Shift+Tab | Previous sprite |
+| Ctrl+Shift+E | Export sprite sheet PNG |
+| Ctrl+I | Import sprite sheet |
 | +/- | Zoom in/out |
 | Arrow keys / Middle mouse drag | Pan |
-| Ctrl+N | New sprite |
+| [ / ] | Previous / next palette |
 
 ## Build Phases
 

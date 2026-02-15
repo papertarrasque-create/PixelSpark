@@ -14,15 +14,18 @@ public class PixelSparkGame : Game
     private SpriteFont _font;
     private Renderer _renderer;
 
-    private Canvas _canvas;
+    private Project _project;
     private ITool _activeTool;
     private readonly PencilTool _pencilTool = new();
     private readonly EraserTool _eraserTool = new();
 
-    private ActionHistory _history = new();
     private PixelAction _currentAction;
 
     private readonly PaletteManager _palette = new();
+
+    // Convenience accessors for the active sprite
+    private Canvas Canvas => _project.ActiveSprite.Canvas;
+    private ActionHistory History => _project.ActiveSprite.History;
 
     private int _zoom = 16;
     private Vector2 _panOffset;
@@ -43,17 +46,27 @@ public class PixelSparkGame : Game
 
     // Palette UI layout
     private const int PaletteLeft = 8;
-    private const int PaletteTop = 30;
+    private const int PaletteTop = 52;
     private const int SwatchSize = 20;
     private const int SwatchPad = 2;
     private const int PaletteColumns = 2;
+
+    // Sprite tab bar layout
+    private const int TabBarY = 26;
+    private const int TabHeight = 20;
+    private const int TabPadX = 8;
+    private const int TabGap = 2;
 
     // Dialog system
     private IDialog _activeDialog;
     private Action<IDialog> _onDialogComplete;
 
+    // Sheet preview mode
+    private bool _sheetPreview;
+    private int _sheetColumns;
+
     // File I/O state
-    private string _currentFilePath;
+    private string _projectFilePath;
     private string _lastDirectory;
     private string _statusMessage;
     private double _statusTimer;
@@ -72,7 +85,7 @@ public class PixelSparkGame : Game
         _graphics.ApplyChanges();
         Window.Title = "PixelSpark";
 
-        _canvas = new Canvas(32, 32);
+        _project = new Project(32, 32);
         _activeTool = _pencilTool;
         _zoom = ZoomLevels[_zoomIndex];
         _lastDirectory = Environment.CurrentDirectory;
@@ -146,56 +159,56 @@ public class PixelSparkGame : Game
 
     private void UpdateTitle()
     {
-        if (_currentFilePath != null)
-            Window.Title = $"PixelSpark — {Path.GetFileName(_currentFilePath)}";
+        if (_projectFilePath != null)
+            Window.Title = $"PixelSpark — {Path.GetFileName(_projectFilePath)}";
         else
             Window.Title = "PixelSpark";
     }
 
     // --- File I/O flows ---
 
-    private void StartSave()
+    private void StartSaveProject()
     {
-        if (_currentFilePath != null)
+        if (_projectFilePath != null)
         {
-            DoSave(_currentFilePath);
+            DoSaveProject(_projectFilePath);
             return;
         }
-        StartSaveAs();
+        StartSaveProjectAs();
     }
 
-    private void StartSaveAs()
+    private void StartSaveProjectAs()
     {
-        string defaultPath = _currentFilePath
-            ?? Path.Combine(_lastDirectory, "untitled.png");
+        string defaultPath = _projectFilePath
+            ?? Path.Combine(_lastDirectory, "untitled.pxs");
 
-        ShowDialog(new InputDialog("Save As:", defaultPath), dialog =>
+        ShowDialog(new InputDialog("Save Project:", defaultPath), dialog =>
         {
             var input = (InputDialog)dialog;
             if (input.WasCancelled) return;
 
-            string path = ExpandPath(input.ResultText);
-            if (File.Exists(path) && path != _currentFilePath)
+            string path = ExpandPath(input.ResultText, ".pxs");
+            if (File.Exists(path) && path != _projectFilePath)
             {
                 ShowDialog(new ConfirmDialog($"Overwrite {Path.GetFileName(path)}?"), confirm =>
                 {
                     if (((ConfirmDialog)confirm).Confirmed)
-                        DoSave(path);
+                        DoSaveProject(path);
                 });
             }
             else
             {
-                DoSave(path);
+                DoSaveProject(path);
             }
         });
     }
 
-    private void DoSave(string path)
+    private void DoSaveProject(string path)
     {
         try
         {
-            FileIO.SaveCanvasAsPng(_canvas, GraphicsDevice, path);
-            _currentFilePath = path;
+            ProjectIO.SaveProject(_project, path);
+            _projectFilePath = path;
             _lastDirectory = Path.GetDirectoryName(path);
             UpdateTitle();
             ShowStatus($"Saved: {Path.GetFileName(path)}");
@@ -206,7 +219,7 @@ public class PixelSparkGame : Game
         }
     }
 
-    private void StartLoad()
+    private void StartLoadProject()
     {
         string defaultPath = _lastDirectory + Path.DirectorySeparatorChar;
 
@@ -215,12 +228,33 @@ public class PixelSparkGame : Game
             var input = (InputDialog)dialog;
             if (input.WasCancelled) return;
 
-            string path = ExpandPath(input.ResultText);
+            string raw = input.ResultText;
+            // Detect extension to decide format
+            if (raw.StartsWith('~'))
+                raw = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + raw[1..];
+            string path = Path.GetFullPath(raw);
+
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+
             try
             {
-                _canvas = FileIO.LoadCanvasFromPng(GraphicsDevice, path);
-                _history = new ActionHistory();
-                _currentFilePath = path;
+                if (ext == ".pxs")
+                {
+                    _project = ProjectIO.LoadProject(path);
+                    _projectFilePath = path;
+                }
+                else
+                {
+                    // Treat as PNG — load into a single-sprite project
+                    if (string.IsNullOrEmpty(ext))
+                        path += ".png";
+                    var canvas = FileIO.LoadCanvasFromPng(GraphicsDevice, path);
+                    _project = new Project(canvas.Width, canvas.Height);
+                    // Replace the default sprite with the loaded canvas
+                    _project.ReplaceSprite(0, new Sprite(Path.GetFileNameWithoutExtension(path), canvas));
+                    _projectFilePath = null;
+                }
+
                 _lastDirectory = Path.GetDirectoryName(path);
                 CenterCanvas();
                 UpdateTitle();
@@ -233,28 +267,149 @@ public class PixelSparkGame : Game
         });
     }
 
-    private void StartNewCanvas()
+    private void StartNewProject()
     {
-        ShowDialog(new NewCanvasDialog(_canvas.Width, _canvas.Height), dialog =>
+        ShowDialog(new NewCanvasDialog(Canvas.Width, Canvas.Height), dialog =>
         {
             var newDialog = (NewCanvasDialog)dialog;
             if (newDialog.WasCancelled) return;
 
-            _canvas = new Canvas(newDialog.ResultWidth, newDialog.ResultHeight);
-            _history = new ActionHistory();
-            _currentFilePath = null;
+            _project = new Project(newDialog.ResultWidth, newDialog.ResultHeight);
+            _projectFilePath = null;
             CenterCanvas();
             UpdateTitle();
-            ShowStatus($"New canvas: {newDialog.ResultWidth}x{newDialog.ResultHeight}");
+            ShowStatus($"New project: {newDialog.ResultWidth}x{newDialog.ResultHeight}");
         });
     }
 
-    private static string ExpandPath(string path)
+    private void StartExportSpriteSheet()
+    {
+        if (_project.Sprites.Count < 2)
+        {
+            ShowStatus("Need at least 2 sprites to export a sheet");
+            return;
+        }
+
+        string defaultPath = Path.Combine(_lastDirectory, "spritesheet.png");
+        ShowDialog(new InputDialog("Export Sprite Sheet:", defaultPath), dialog =>
+        {
+            var input = (InputDialog)dialog;
+            if (input.WasCancelled) return;
+
+            string path = ExpandPath(input.ResultText, ".png");
+            if (File.Exists(path))
+            {
+                ShowDialog(new ConfirmDialog($"Overwrite {Path.GetFileName(path)}?"), confirm =>
+                {
+                    if (((ConfirmDialog)confirm).Confirmed)
+                        DoExportSpriteSheet(path);
+                });
+            }
+            else
+            {
+                DoExportSpriteSheet(path);
+            }
+        });
+    }
+
+    private void DoExportSpriteSheet(string path)
+    {
+        try
+        {
+            int columns = Math.Min(_project.Sprites.Count, 8);
+            FileIO.ExportSpriteSheet(_project, GraphicsDevice, path, columns);
+            _lastDirectory = Path.GetDirectoryName(path);
+            ShowStatus($"Exported sheet: {Path.GetFileName(path)}");
+        }
+        catch (Exception ex)
+        {
+            ShowStatus($"Export failed: {ex.Message}", 4.0);
+        }
+    }
+
+    private void StartImportSpriteSheet()
+    {
+        string defaultPath = _lastDirectory + Path.DirectorySeparatorChar;
+        ShowDialog(new InputDialog("Import Sprite Sheet:", defaultPath), dialog =>
+        {
+            var input = (InputDialog)dialog;
+            if (input.WasCancelled) return;
+
+            string path = ExpandPath(input.ResultText, ".png");
+            try
+            {
+                var sprites = FileIO.ImportSpriteSheet(
+                    GraphicsDevice, path, _project.FrameWidth, _project.FrameHeight);
+
+                foreach (var sprite in sprites)
+                    _project.AddSprite(sprite);
+
+                _lastDirectory = Path.GetDirectoryName(path);
+                ShowStatus($"Imported {sprites.Count} frames from {Path.GetFileName(path)}");
+            }
+            catch (Exception ex)
+            {
+                ShowStatus($"Import failed: {ex.Message}", 4.0);
+            }
+        });
+    }
+
+    private void StartAddSprite()
+    {
+        string defaultName = _project.NextDefaultName();
+        ShowDialog(new InputDialog("Sprite Name:", defaultName), dialog =>
+        {
+            var input = (InputDialog)dialog;
+            if (input.WasCancelled) return;
+
+            _project.AddSprite(input.ResultText.Trim());
+            CenterCanvas();
+            ShowStatus($"Added: {_project.ActiveSprite.Name}");
+        });
+    }
+
+    private void StartRenameSprite()
+    {
+        ShowDialog(new InputDialog("Rename Sprite:", _project.ActiveSprite.Name), dialog =>
+        {
+            var input = (InputDialog)dialog;
+            if (input.WasCancelled) return;
+
+            string newName = input.ResultText.Trim();
+            if (newName.Length > 0)
+            {
+                _project.RenameSprite(_project.ActiveIndex, newName);
+                ShowStatus($"Renamed to: {newName}");
+            }
+        });
+    }
+
+    private void StartRemoveSprite()
+    {
+        if (_project.Sprites.Count <= 1)
+        {
+            ShowStatus("Can't remove the last sprite");
+            return;
+        }
+
+        string name = _project.ActiveSprite.Name;
+        ShowDialog(new ConfirmDialog($"Remove \"{name}\"?"), dialog =>
+        {
+            if (((ConfirmDialog)dialog).Confirmed)
+            {
+                _project.RemoveSprite(_project.ActiveIndex);
+                CenterCanvas();
+                ShowStatus($"Removed: {name}");
+            }
+        });
+    }
+
+    private static string ExpandPath(string path, string defaultExtension = ".png")
     {
         if (path.StartsWith('~'))
             path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + path[1..];
         if (string.IsNullOrEmpty(Path.GetExtension(path)))
-            path += ".png";
+            path += defaultExtension;
         return Path.GetFullPath(path);
     }
 
@@ -265,37 +420,80 @@ public class PixelSparkGame : Game
         bool ctrl = keyboard.IsKeyDown(Keys.LeftControl) || keyboard.IsKeyDown(Keys.RightControl);
         bool shift = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
 
+        // Sprite sheet export: Ctrl+Shift+E
+        if (ctrl && shift && KeyPressed(keyboard, Keys.E))
+        {
+            StartExportSpriteSheet();
+            return;
+        }
+
         // File I/O shortcuts
         if (ctrl && shift && KeyPressed(keyboard, Keys.S))
         {
-            StartSaveAs();
+            StartSaveProjectAs();
             return;
         }
         if (ctrl && !shift && KeyPressed(keyboard, Keys.S))
         {
-            StartSave();
+            StartSaveProject();
             return;
         }
         if (ctrl && KeyPressed(keyboard, Keys.O))
         {
-            StartLoad();
+            StartLoadProject();
             return;
         }
         if (ctrl && KeyPressed(keyboard, Keys.N))
         {
-            StartNewCanvas();
+            StartNewProject();
+            return;
+        }
+
+        // Sprite management
+        if (ctrl && KeyPressed(keyboard, Keys.T))
+        {
+            StartAddSprite();
+            return;
+        }
+        if (ctrl && KeyPressed(keyboard, Keys.W))
+        {
+            StartRemoveSprite();
+            return;
+        }
+        if (KeyPressed(keyboard, Keys.F2))
+        {
+            StartRenameSprite();
+            return;
+        }
+
+        // Sprite sheet import: Ctrl+I
+        if (ctrl && KeyPressed(keyboard, Keys.I))
+        {
+            StartImportSpriteSheet();
+            return;
+        }
+
+        // Sprite cycling: Ctrl+Tab / Ctrl+Shift+Tab
+        if (ctrl && KeyPressed(keyboard, Keys.Tab))
+        {
+            FinishDrawing();
+            if (shift)
+                _project.SetActive((_project.ActiveIndex - 1 + _project.Sprites.Count) % _project.Sprites.Count);
+            else
+                _project.SetActive((_project.ActiveIndex + 1) % _project.Sprites.Count);
+            CenterCanvas();
             return;
         }
 
         // Undo / Redo (redo check first — Ctrl+Shift+Z includes Ctrl+Z)
         if (ctrl && shift && KeyPressed(keyboard, Keys.Z))
         {
-            _history.Redo(_canvas);
+            History.Redo(Canvas);
             return;
         }
         if (ctrl && !shift && KeyPressed(keyboard, Keys.Z))
         {
-            _history.Undo(_canvas);
+            History.Undo(Canvas);
             return;
         }
 
@@ -305,6 +503,23 @@ public class PixelSparkGame : Game
 
         // Grid toggle
         if (KeyPressed(keyboard, Keys.G)) _showGrid = !_showGrid;
+
+        // Sheet preview toggle
+        if (KeyPressed(keyboard, Keys.V))
+        {
+            FinishDrawing();
+            _sheetPreview = !_sheetPreview;
+            if (_sheetPreview)
+            {
+                _sheetColumns = Math.Min(_project.Sprites.Count, 8);
+                CenterSheet();
+            }
+            else
+            {
+                CenterCanvas();
+            }
+            return;
+        }
 
         // Zoom
         if (KeyPressed(keyboard, Keys.OemPlus) || KeyPressed(keyboard, Keys.Add))
@@ -323,19 +538,45 @@ public class PixelSparkGame : Game
         if (KeyPressed(keyboard, Keys.OemCloseBrackets)) _palette.NextPalette();
     }
 
+    private void FinishDrawing()
+    {
+        if (!_isDrawing) return;
+        _activeTool.OnRelease();
+        if (_currentAction != null)
+        {
+            History.Push(_currentAction);
+            _currentAction = null;
+        }
+        _isDrawing = false;
+        _lastGridPos = new Point(-1, -1);
+    }
+
     private void AdjustZoom(int direction)
     {
         int newIndex = Math.Clamp(_zoomIndex + direction, 0, ZoomLevels.Length - 1);
         if (newIndex == _zoomIndex) return;
 
-        float canvasCenterX = _panOffset.X + _canvas.Width * _zoom / 2f;
-        float canvasCenterY = _panOffset.Y + _canvas.Height * _zoom / 2f;
+        int viewW, viewH;
+        if (_sheetPreview)
+        {
+            int rows = (int)Math.Ceiling((double)_project.Sprites.Count / _sheetColumns);
+            viewW = _project.FrameWidth * _sheetColumns;
+            viewH = _project.FrameHeight * rows;
+        }
+        else
+        {
+            viewW = Canvas.Width;
+            viewH = Canvas.Height;
+        }
+
+        float centerX = _panOffset.X + viewW * _zoom / 2f;
+        float centerY = _panOffset.Y + viewH * _zoom / 2f;
 
         _zoomIndex = newIndex;
         _zoom = ZoomLevels[_zoomIndex];
 
-        _panOffset.X = canvasCenterX - _canvas.Width * _zoom / 2f;
-        _panOffset.Y = canvasCenterY - _canvas.Height * _zoom / 2f;
+        _panOffset.X = centerX - viewW * _zoom / 2f;
+        _panOffset.Y = centerY - viewH * _zoom / 2f;
     }
 
     private void HandleMouse(MouseState mouse)
@@ -375,9 +616,43 @@ public class PixelSparkGame : Game
             if (swatchIndex >= 0)
             {
                 _palette.SelectColor(swatchIndex);
-                return; // don't start drawing
+                return;
+            }
+
+            // Left click on sprite tabs
+            int tabIndex = HitTestTabs(mouse.X, mouse.Y);
+            if (tabIndex >= 0)
+            {
+                if (tabIndex != _project.ActiveIndex)
+                {
+                    FinishDrawing();
+                    _project.SetActive(tabIndex);
+                    if (!_sheetPreview) CenterCanvas();
+                }
+                return;
+            }
+            if (tabIndex == -1) // [+] button
+            {
+                StartAddSprite();
+                return;
+            }
+
+            // Click on a frame in sheet preview → switch to it and exit preview
+            if (_sheetPreview)
+            {
+                int frameIndex = HitTestSheetFrame(mouse.X, mouse.Y);
+                if (frameIndex >= 0)
+                {
+                    _project.SetActive(frameIndex);
+                    _sheetPreview = false;
+                    CenterCanvas();
+                }
+                return;
             }
         }
+
+        // No drawing in sheet preview mode
+        if (_sheetPreview) return;
 
         // Left mouse drawing
         Point gridPos = ScreenToGrid(mouse.X, mouse.Y);
@@ -388,9 +663,9 @@ public class PixelSparkGame : Game
             if (!_isDrawing)
             {
                 _isDrawing = true;
-                if (_canvas.InBounds(gridPos.X, gridPos.Y))
+                if (Canvas.InBounds(gridPos.X, gridPos.Y))
                 {
-                    _currentAction = _activeTool.OnPress(_canvas, gridPos.X, gridPos.Y, activeColor);
+                    _currentAction = _activeTool.OnPress(Canvas, gridPos.X, gridPos.Y, activeColor);
                     _lastGridPos = gridPos;
                 }
             }
@@ -398,30 +673,23 @@ public class PixelSparkGame : Game
             {
                 foreach (var p in BresenhamLine(_lastGridPos.X, _lastGridPos.Y, gridPos.X, gridPos.Y))
                 {
-                    if (_canvas.InBounds(p.X, p.Y))
-                        _activeTool.OnDrag(_canvas, p.X, p.Y, activeColor, _currentAction);
+                    if (Canvas.InBounds(p.X, p.Y))
+                        _activeTool.OnDrag(Canvas, p.X, p.Y, activeColor, _currentAction);
                 }
                 _lastGridPos = gridPos;
             }
-            else if (_lastGridPos.X < 0 && _canvas.InBounds(gridPos.X, gridPos.Y))
+            else if (_lastGridPos.X < 0 && Canvas.InBounds(gridPos.X, gridPos.Y))
             {
                 if (_currentAction == null)
-                    _currentAction = _activeTool.OnPress(_canvas, gridPos.X, gridPos.Y, activeColor);
+                    _currentAction = _activeTool.OnPress(Canvas, gridPos.X, gridPos.Y, activeColor);
                 else
-                    _activeTool.OnDrag(_canvas, gridPos.X, gridPos.Y, activeColor, _currentAction);
+                    _activeTool.OnDrag(Canvas, gridPos.X, gridPos.Y, activeColor, _currentAction);
                 _lastGridPos = gridPos;
             }
         }
         else if (_isDrawing)
         {
-            _activeTool.OnRelease();
-            if (_currentAction != null)
-            {
-                _history.Push(_currentAction);
-                _currentAction = null;
-            }
-            _isDrawing = false;
-            _lastGridPos = new Point(-1, -1);
+            FinishDrawing();
         }
     }
 
@@ -433,25 +701,47 @@ public class PixelSparkGame : Game
 
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
 
-        _renderer.DrawCanvas(_spriteBatch, _canvas, _zoom, _panOffset, _showGrid);
+        if (_sheetPreview)
+            DrawSheetPreview();
+        else
+            _renderer.DrawCanvas(_spriteBatch, Canvas, _zoom, _panOffset, _showGrid);
+
         DrawPalette();
+        DrawSpriteTabs();
 
         // Top bar
-        string topBar = $"[{_activeTool.Name}]  Zoom: {_zoom}x  Grid: {(_showGrid ? "ON" : "OFF")}  Palette: {_palette.CurrentPalette.Name}";
-        _spriteBatch.DrawString(_font, topBar, new Vector2(8, 6), Color.White);
+        string topBar;
+        if (_sheetPreview)
+            topBar = $"[SHEET PREVIEW]  Zoom: {_zoom}x  {_project.Sprites.Count} sprites  [V] Exit  [Click] Select";
+        else
+            topBar = $"[{_activeTool.Name}]  Zoom: {_zoom}x  Grid: {(_showGrid ? "ON" : "OFF")}  Palette: {_palette.CurrentPalette.Name}";
+        _spriteBatch.DrawString(_font, topBar, new Vector2(8, 6), _sheetPreview ? new Color(120, 200, 255) : Color.White);
 
         // Status bar
-        var mouseState = Mouse.GetState();
-        var gridPos = ScreenToGrid(mouseState.X, mouseState.Y);
-        string status = $"{_canvas.Width}x{_canvas.Height}";
-        if (_canvas.InBounds(gridPos.X, gridPos.Y))
-            status += $"  ({gridPos.X}, {gridPos.Y})";
-        if (_statusMessage != null)
-            status += $"  {_statusMessage}";
-        else if (_currentFilePath != null)
-            status += $"  [{Path.GetFileName(_currentFilePath)}]";
-        if (_history.CanUndo) status += "  [Ctrl+Z: Undo]";
-        if (_history.CanRedo) status += "  [Ctrl+Shift+Z: Redo]";
+        string status;
+        if (_sheetPreview)
+        {
+            int rows = (int)Math.Ceiling((double)_project.Sprites.Count / _sheetColumns);
+            status = $"Sheet: {_sheetColumns}x{rows} ({_project.FrameWidth}x{_project.FrameHeight} per frame)";
+            var mouseState = Mouse.GetState();
+            int hoverFrame = HitTestSheetFrame(mouseState.X, mouseState.Y);
+            if (hoverFrame >= 0)
+                status += $"  [{_project.Sprites[hoverFrame].Name}]";
+        }
+        else
+        {
+            var mouseState = Mouse.GetState();
+            var gridPos = ScreenToGrid(mouseState.X, mouseState.Y);
+            status = $"{Canvas.Width}x{Canvas.Height}";
+            if (Canvas.InBounds(gridPos.X, gridPos.Y))
+                status += $"  ({gridPos.X}, {gridPos.Y})";
+            if (_statusMessage != null)
+                status += $"  {_statusMessage}";
+            else
+                status += $"  [{_project.ActiveSprite.Name}]  {_project.ActiveIndex + 1}/{_project.Sprites.Count}";
+            if (History.CanUndo) status += "  [Ctrl+Z: Undo]";
+            if (History.CanRedo) status += "  [Ctrl+Shift+Z: Redo]";
+        }
         float statusY = _graphics.PreferredBackBufferHeight - _font.LineSpacing - 6;
         _spriteBatch.DrawString(_font, status, new Vector2(8, statusY), Color.Gray);
 
@@ -462,6 +752,146 @@ public class PixelSparkGame : Game
 
         _spriteBatch.End();
         base.Draw(gameTime);
+    }
+
+    private void DrawSpriteTabs()
+    {
+        int x = 8;
+        for (int i = 0; i < _project.Sprites.Count; i++)
+        {
+            string name = _project.Sprites[i].Name;
+            var textSize = _font.MeasureString(name);
+            int tabWidth = (int)textSize.X + TabPadX * 2;
+            var tabRect = new Rectangle(x, TabBarY, tabWidth, TabHeight);
+
+            if (i == _project.ActiveIndex)
+            {
+                _renderer.DrawRect(_spriteBatch, tabRect, new Color(60, 60, 60));
+                _renderer.DrawRectOutline(_spriteBatch, tabRect, new Color(120, 120, 120), 1);
+                _spriteBatch.DrawString(_font, name, new Vector2(x + TabPadX, TabBarY + 2), Color.White);
+            }
+            else
+            {
+                _renderer.DrawRect(_spriteBatch, tabRect, new Color(40, 40, 40));
+                _spriteBatch.DrawString(_font, name, new Vector2(x + TabPadX, TabBarY + 2), Color.Gray);
+            }
+
+            x += tabWidth + TabGap;
+        }
+
+        // Draw [+] button
+        string plus = "+";
+        var plusSize = _font.MeasureString(plus);
+        int plusWidth = (int)plusSize.X + TabPadX * 2;
+        var plusRect = new Rectangle(x, TabBarY, plusWidth, TabHeight);
+        _renderer.DrawRect(_spriteBatch, plusRect, new Color(40, 40, 40));
+        _spriteBatch.DrawString(_font, plus, new Vector2(x + TabPadX, TabBarY + 2), new Color(100, 100, 100));
+    }
+
+    private int HitTestTabs(int screenX, int screenY)
+    {
+        if (screenY < TabBarY || screenY >= TabBarY + TabHeight)
+            return -2; // not in tab bar
+
+        int x = 8;
+        for (int i = 0; i < _project.Sprites.Count; i++)
+        {
+            string name = _project.Sprites[i].Name;
+            var textSize = _font.MeasureString(name);
+            int tabWidth = (int)textSize.X + TabPadX * 2;
+
+            if (screenX >= x && screenX < x + tabWidth)
+                return i;
+
+            x += tabWidth + TabGap;
+        }
+
+        // Check [+] button
+        string plus = "+";
+        var plusSize = _font.MeasureString(plus);
+        int plusWidth = (int)plusSize.X + TabPadX * 2;
+        if (screenX >= x && screenX < x + plusWidth)
+            return -1; // signal: add new sprite
+
+        return -2; // nothing hit
+    }
+
+    private void DrawSheetPreview()
+    {
+        int fw = _project.FrameWidth;
+        int fh = _project.FrameHeight;
+
+        for (int i = 0; i < _project.Sprites.Count; i++)
+        {
+            int col = i % _sheetColumns;
+            int row = i / _sheetColumns;
+
+            var frameOffset = new Vector2(
+                _panOffset.X + col * fw * _zoom,
+                _panOffset.Y + row * fh * _zoom);
+
+            _renderer.DrawCanvas(_spriteBatch, _project.Sprites[i].Canvas, _zoom, frameOffset, _showGrid);
+
+            // Highlight active sprite's frame
+            if (i == _project.ActiveIndex)
+            {
+                var frameRect = new Rectangle(
+                    (int)frameOffset.X, (int)frameOffset.Y,
+                    fw * _zoom, fh * _zoom);
+                _renderer.DrawRectOutline(_spriteBatch, frameRect, new Color(120, 200, 255, 180), 2);
+            }
+        }
+
+        // Draw frame separator lines
+        int totalCols = _sheetColumns;
+        int totalRows = (int)Math.Ceiling((double)_project.Sprites.Count / _sheetColumns);
+        var separatorColor = new Color(200, 200, 200, 60);
+
+        for (int c = 1; c < totalCols; c++)
+        {
+            int sx = (int)(_panOffset.X + c * fw * _zoom);
+            _renderer.DrawRect(_spriteBatch,
+                new Rectangle(sx - 1, (int)_panOffset.Y, 2, totalRows * fh * _zoom),
+                separatorColor);
+        }
+        for (int r = 1; r < totalRows; r++)
+        {
+            int sy = (int)(_panOffset.Y + r * fh * _zoom);
+            _renderer.DrawRect(_spriteBatch,
+                new Rectangle((int)_panOffset.X, sy - 1, totalCols * fw * _zoom, 2),
+                separatorColor);
+        }
+    }
+
+    private int HitTestSheetFrame(int screenX, int screenY)
+    {
+        int fw = _project.FrameWidth * _zoom;
+        int fh = _project.FrameHeight * _zoom;
+
+        int relX = screenX - (int)_panOffset.X;
+        int relY = screenY - (int)_panOffset.Y;
+
+        if (relX < 0 || relY < 0) return -1;
+
+        int col = relX / fw;
+        int row = relY / fh;
+
+        if (col >= _sheetColumns) return -1;
+
+        int index = row * _sheetColumns + col;
+        if (index >= _project.Sprites.Count) return -1;
+
+        return index;
+    }
+
+    private void CenterSheet()
+    {
+        int rows = (int)Math.Ceiling((double)_project.Sprites.Count / _sheetColumns);
+        int totalW = _project.FrameWidth * _sheetColumns;
+        int totalH = _project.FrameHeight * rows;
+        _panOffset = new Vector2(
+            (_graphics.PreferredBackBufferWidth - totalW * _zoom) / 2f,
+            (_graphics.PreferredBackBufferHeight - totalH * _zoom) / 2f);
     }
 
     private void DrawPalette()
@@ -475,10 +905,8 @@ public class PixelSparkGame : Game
             int y = PaletteTop + row * (SwatchSize + SwatchPad);
             var rect = new Rectangle(x, y, SwatchSize, SwatchSize);
 
-            // Draw swatch
             _renderer.DrawRect(_spriteBatch, rect, palette.Colors[i]);
 
-            // Highlight active color
             if (i == _palette.ColorIndex)
                 _renderer.DrawRectOutline(_spriteBatch, new Rectangle(x - 2, y - 2, SwatchSize + 4, SwatchSize + 4), Color.White, 2);
         }
@@ -504,8 +932,8 @@ public class PixelSparkGame : Game
     private void CenterCanvas()
     {
         _panOffset = new Vector2(
-            (_graphics.PreferredBackBufferWidth - _canvas.Width * _zoom) / 2f,
-            (_graphics.PreferredBackBufferHeight - _canvas.Height * _zoom) / 2f);
+            (_graphics.PreferredBackBufferWidth - Canvas.Width * _zoom) / 2f,
+            (_graphics.PreferredBackBufferHeight - Canvas.Height * _zoom) / 2f);
     }
 
     private Point ScreenToGrid(int screenX, int screenY)

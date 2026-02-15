@@ -80,15 +80,22 @@ You can create a sprite, save it as a PNG, close the app, reopen, load the PNG, 
 **Goal:** The game-dev payoff. Multiple sprites, one export.
 
 ### Deliverables
-- [ ] Project model — collection of named sprites (each with its own canvas)
-- [ ] Sprite list panel or tab bar
-- [ ] Add / remove / rename sprites within a project
-- [ ] Sprite sheet export — grid layout, configurable columns (Ctrl+Shift+S)
-- [ ] Sprite sheet import — split an image into equal-size frames
-- [ ] Save/load project as JSON (preserving all sprites + metadata)
+- [x] Project model — collection of named sprites (each with its own canvas)
+- [x] Sprite tab bar — clickable tabs, [+] button, active highlight
+- [x] Add (Ctrl+T) / remove (Ctrl+W) / rename (F2) sprites within a project
+- [x] Sprite cycling (Ctrl+Tab / Ctrl+Shift+Tab)
+- [x] Sprite sheet export — grid layout, configurable columns (Ctrl+Shift+E)
+- [x] Sprite sheet import — split an image into equal-size frames (Ctrl+I)
+- [x] Save/load project as JSON `.pxs` format (Ctrl+S / Ctrl+O)
+- [x] Sheet preview mode (V) — view all sprites tiled, click to select
+
+### Notes
+Project save format is `.pxs` (not `.pxproj` — that extension collides with MSBuild's `*proj` glob). Pixel data stored as base64-encoded RGBA in JSON. Sheet export uses `min(spriteCount, 8)` columns by default. Import uses the project's frame dimensions to chop the source image. Open (Ctrl+O) auto-detects `.pxs` vs `.png` by extension.
 
 ### Done When
 You can create a project with multiple sprites, edit them individually, export a sprite sheet PNG ready for a game engine, and save/load the full project without data loss.
+
+**Status: COMPLETE**
 
 ---
 
