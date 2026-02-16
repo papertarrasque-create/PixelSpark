@@ -181,15 +181,19 @@ Richer editing tools. Each implements ITool with optional `DrawPreview`, `Interp
 
 - **Palette editor** — Modify and save custom palettes. Lets artists create and persist their own color sets beyond the built-in presets (PICO-8, NES, CGA, Endesga-32). Was originally part of Phase 5 but deferred as lower priority than the core drawing/selection tools.
 
-## Future: Engine Integration
+## Future: Shared Loader Library
 
-PixelSpark is designed to eventually live inside a game engine as a built-in sprite editor. Architectural decisions that support this:
+The next step for PixelSpark is a standalone `PixelSparkLoader` — a small, zero-dependency C# class that reads `.pxs` project files and returns frame data (name, dimensions, RGBA bytes). This lets any C# project consume PixelSpark output without coupling to the editor or MonoGame.
+
+The loader reads, never writes. PixelSpark stays the sole authoring tool. The `.pxs` JSON format is the contract between them.
+
+Architectural decisions that already support this:
 - Canvas is a pure data model (Color array), not coupled to rendering
-- Tools produce Actions, not direct mutations — the engine could intercept or replay these
+- `ProjectIO.cs` already contains the serialization logic — the loader is a trimmed extraction of it
 - Project/sprite sheet model maps directly to game asset pipelines
 - No external dependencies beyond MonoGame itself
 
-This is a note for the future, not a current requirement. Build the standalone editor first. Earn the complexity.
+Embedding the editor UI inside another app is a separate, larger refactor — deferred until a concrete need exists. See PRD.md for full spec.
 
 ## Run
 

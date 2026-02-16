@@ -123,6 +123,32 @@ The tool set covers the core operations a pixel artist needs for sprite work. Ev
 
 ---
 
+## Future — Shared Loader Library
+
+**Goal:** Make PixelSpark output consumable by other C# projects without coupling them to the editor.
+
+### Approach
+Extract a lightweight `PixelSparkLoader` — a standalone class (or small library) that reads `.pxs` project files and PNG sprite sheets. Any consuming app gets named sprites, frame dimensions, and pixel data. No MonoGame dependency required on the loader side.
+
+### Deliverables
+- [ ] `PixelSparkLoader` class — reads `.pxs` JSON, returns frame data (name, width, height, RGBA byte arrays)
+- [ ] Sprite sheet slicer — given a PNG and frame dimensions, returns individual frame byte arrays
+- [ ] Format documentation — `.pxs` JSON schema and sprite sheet layout conventions documented in a standalone file
+- [ ] Package as a referenceable project or NuGet package (decide when a consuming project exists)
+
+### Design Constraints
+- Zero dependency on MonoGame or any rendering framework — pure data in, pure data out
+- The loader does not write or modify `.pxs` files — PixelSpark remains the sole authoring tool
+- The `.pxs` format is the contract between editor and consumer. If the format evolves, the loader evolves with it
+
+### Not In Scope
+- Embedding the editor UI inside another app (that's a larger refactor, deferred until a concrete need exists)
+- Animation playback or timing — the loader provides frames, the consuming app decides how to use them
+
+**Status: NOT STARTED**
+
+---
+
 ## Principles
 
 - **Canvas dominates.** Every UI element earns its screen space. If it's not helping the artist right now, it's in the way.
